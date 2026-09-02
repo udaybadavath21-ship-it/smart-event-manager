@@ -1,0 +1,50 @@
+.main-content {
+  padding: 30px;
+  background: #f5f7fb;
+  min-height: 100vh;
+}
+
+.dashboard-header {
+  margin-bottom: 25px;
+}
+
+.dashboard-header h1 {
+  font-size: 34px;
+  color: #1e293b;
+  margin-bottom: 8px;
+}
+
+.dashboard-header p {
+  color: #64748b;
+  font-size: 17px;
+}
+
+.dashboard-section {
+  margin-top: 35px;
+}
+
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 25px;
+}
+
+.chart-card {
+  background: white;
+  padding: 20px;
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.08);
+  transition: .3s;
+}
+
+.chart-card:hover {
+  transform: translateY(-6px);
+}
+
+.ai-card {
+  background: white;
+  margin-top: 30px;
+  border-radius: 18px;
+  padding: 25px;
+  box-shadow: 0 10px 30px rgba(0,0,0,.08);
+}

@@ -1,0 +1,14 @@
+.health-card{
+    background:white;
+    margin-top:30px;
+    padding:30px;
+    border-radius:12px;
+    text-align:center;
+    box-shadow:0 2px 10px rgba(0,0,0,.1);
+}
+
+.health-score{
+    font-size:70px;
+    font-weight:bold;
+    margin:20px 0;
+}

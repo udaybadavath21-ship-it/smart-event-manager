@@ -1,0 +1,18 @@
+.recommendation-box {
+  margin-top: 40px;
+}
+
+.recommendation-card {
+  background: white;
+  padding: 18px;
+  margin-bottom: 15px;
+  border-left: 6px solid #4F46E5;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+  font-size: 17px;
+  transition: 0.3s;
+}
+
+.recommendation-card:hover {
+  transform: translateX(5px);
+}

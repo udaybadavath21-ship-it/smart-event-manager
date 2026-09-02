@@ -1,0 +1,25 @@
+.search-container {
+  margin: 20px 0;
+}
+
+.search-box {
+  width: 100%;
+  max-width: 450px;
+  padding: 12px 18px;
+  font-size: 16px;
+  border: 2px solid #d1d5db;
+  border-radius: 12px;
+  outline: none;
+  transition: all 0.3s ease;
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.search-box:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 10px rgba(79, 70, 229, 0.2);
+}
+
+.search-box::placeholder {
+  color: #9ca3af;
+}

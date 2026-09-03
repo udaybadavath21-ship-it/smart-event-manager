@@ -116,13 +116,24 @@ function Sidebar() {
 
       <Link
         className={
+          location.pathname === "/venues" || location.pathname === "/venue" || location.pathname === "/venue-management"
+            ? "active-link"
+            : ""
+        }
+        to="/venues"
+      >
+        🏢 Venues
+      </Link>
+
+      <Link
+        className={
           location.pathname === "/venue-agent"
             ? "active-link"
             : ""
         }
         to="/venue-agent"
       >
-        🏢 Venues
+        🤖 Venue Agent
       </Link>
 
       <Link

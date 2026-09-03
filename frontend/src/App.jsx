@@ -8,6 +8,7 @@ import AIInsights from "./pages/AIInsights";
 import Attendees from "./pages/Attendees";
 import CSVUpload from "./pages/CSVUpload";
 import VenueAgent from "./pages/VenueAgent";
+import Venues from "./pages/Venues";
 import SpeakerAgent from "./pages/SpeakerAgent";
 import Speakers from "./pages/Speakers";
 import Scheduling from "./pages/Scheduling";
@@ -81,8 +82,26 @@ function App() {
         />
 
         {/* =================================================
-            MILESTONE 2 - VENUE AGENT
+            MILESTONE 2 - VENUE MANAGEMENT
         ================================================= */}
+        <Route
+          path="/venues"
+          element={
+            <ProtectedRoute>
+              <Venues />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/venue"
+          element={<Navigate to="/venues" replace />}
+        />
+        <Route
+          path="/venue-management"
+          element={<Navigate to="/venues" replace />}
+        />
+
+        {/* Venue Agent (AI Recommendations) */}
         <Route
           path="/venue-agent"
           element={

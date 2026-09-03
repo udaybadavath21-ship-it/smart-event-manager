@@ -1135,6 +1135,35 @@ def get_sessions(
     user: str = Depends(verify_token),
 ):
     return db.query(Session).all()
+
+
+@app.delete("/session/{session_id}")
+def delete_session(
+    session_id: int,
+    db: Session = Depends(get_db),
+    user: str = Depends(verify_token),
+):
+    session = db.query(Session).filter(
+        Session.session_id == session_id
+    ).first()
+
+    if not session:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found."
+        )
+
+    # Clean up associated schedules if any
+    db.query(SessionSchedule).filter(
+        SessionSchedule.session_id == session_id
+    ).delete()
+
+    db.delete(session)
+    db.commit()
+
+    return {
+        "message": "Session deleted successfully!"
+    }
 # =========================================================
 # SPEAKER & VENUE SCHEDULING
 # =========================================================

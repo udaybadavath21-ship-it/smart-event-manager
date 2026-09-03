@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api";
 import Swal from "sweetalert2";
 import Sidebar from "../components/Sidebar";
@@ -308,12 +309,43 @@ const handleRoomSuggestion = async () => {
 
           {/* Header */}
 
-          <div className="scheduling-header">
-            <h1>📅 Session Scheduling</h1>
-            <p>
-              Schedule speakers and venues while automatically
-              preventing conflicts.
-            </p>
+          <div
+            className="scheduling-header"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div>
+              <h1>📅 Session Scheduling</h1>
+              <p>
+                Schedule speakers and venues while automatically
+                preventing conflicts.
+              </p>
+            </div>
+
+            <Link
+              to="/sessions"
+              style={{
+                background: "rgba(255, 255, 255, 0.22)",
+                color: "#ffffff",
+                padding: "10px 18px",
+                borderRadius: "10px",
+                textDecoration: "none",
+                fontWeight: "600",
+                fontSize: "14px",
+                border: "1px solid rgba(255, 255, 255, 0.35)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "background 0.2s",
+              }}
+            >
+              📋 Manage Sessions
+            </Link>
           </div>
 
           {/* Scheduling Form */}

@@ -160,6 +160,17 @@ function Sidebar() {
 
       <Link
         className={
+          location.pathname === "/sessions" || location.pathname === "/session" || location.pathname === "/session-management"
+            ? "active-link"
+            : ""
+        }
+        to="/sessions"
+      >
+        📋 Sessions
+      </Link>
+
+      <Link
+        className={
           location.pathname === "/scheduling"
             ? "active-link"
             : ""

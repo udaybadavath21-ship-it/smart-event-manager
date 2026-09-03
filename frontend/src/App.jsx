@@ -11,6 +11,7 @@ import VenueAgent from "./pages/VenueAgent";
 import Venues from "./pages/Venues";
 import SpeakerAgent from "./pages/SpeakerAgent";
 import Speakers from "./pages/Speakers";
+import Sessions from "./pages/Sessions";
 import Scheduling from "./pages/Scheduling";
 import SessionAnalytics from "./pages/SessionAnalytics";
 import Sponsors from "./pages/Sponsors";
@@ -143,14 +144,32 @@ function App() {
             </ProtectedRoute>
           }
         />
-<Route
-  path="/scheduling"
-  element={
-    <ProtectedRoute>
-      <Scheduling />
-    </ProtectedRoute>
-  }
-/>
+        {/* Session Management */}
+        <Route
+          path="/sessions"
+          element={
+            <ProtectedRoute>
+              <Sessions />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/session"
+          element={<Navigate to="/sessions" replace />}
+        />
+        <Route
+          path="/session-management"
+          element={<Navigate to="/sessions" replace />}
+        />
+
+        <Route
+          path="/scheduling"
+          element={
+            <ProtectedRoute>
+              <Scheduling />
+            </ProtectedRoute>
+          }
+        />
 <Route
   path="/session-analytics"
   element={

@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import UserPage from "./pages/UserPage";
 import AdminPage from "./pages/AdminPage";
 import QRScanner from "./pages/QRScanner";
@@ -106,7 +106,16 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/speaker"
+          element={<Navigate to="/speakers" replace />}
+        />
+        <Route
+          path="/speaker-management"
+          element={<Navigate to="/speakers" replace />}
+        />
 
+        {/* Speaker Agent (AI Recommendations) */}
         <Route
           path="/speaker-agent"
           element={

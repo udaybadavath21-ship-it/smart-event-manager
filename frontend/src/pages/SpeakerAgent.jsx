@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import api from "../api";
 import Swal from "sweetalert2";
 import Sidebar from "../components/Sidebar";
@@ -85,12 +86,43 @@ function SpeakerAgent() {
 
           {/* Header */}
 
-          <div className="speaker-agent-header">
-            <h1>🎤 Speaker Agent</h1>
-            <p>
-              Intelligent speaker recommendation based on
-              expertise, experience and availability
-            </p>
+          <div
+            className="speaker-agent-header"
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "16px",
+            }}
+          >
+            <div>
+              <h1>🎤 Speaker Agent</h1>
+              <p>
+                Intelligent speaker recommendation based on
+                expertise, experience and availability
+              </p>
+            </div>
+
+            <Link
+              to="/speakers"
+              style={{
+                background: "rgba(255, 255, 255, 0.22)",
+                color: "#ffffff",
+                padding: "10px 18px",
+                borderRadius: "10px",
+                textDecoration: "none",
+                fontWeight: "600",
+                fontSize: "14px",
+                border: "1px solid rgba(255, 255, 255, 0.35)",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "background 0.2s",
+              }}
+            >
+              👥 Speaker Management
+            </Link>
           </div>
 
           {/* Requirements */}

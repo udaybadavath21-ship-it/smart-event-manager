@@ -9,6 +9,7 @@ import Attendees from "./pages/Attendees";
 import CSVUpload from "./pages/CSVUpload";
 import VenueAgent from "./pages/VenueAgent";
 import SpeakerAgent from "./pages/SpeakerAgent";
+import Speakers from "./pages/Speakers";
 import Scheduling from "./pages/Scheduling";
 import SessionAnalytics from "./pages/SessionAnalytics";
 import Sponsors from "./pages/Sponsors";
@@ -96,14 +97,24 @@ function App() {
           path="/login"
           element={<Login />}
         />
-<Route
-  path="/speaker-agent"
-  element={
-    <ProtectedRoute>
-      <SpeakerAgent />
-    </ProtectedRoute>
-  }
-/>
+        {/* Speaker Management */}
+        <Route
+          path="/speakers"
+          element={
+            <ProtectedRoute>
+              <Speakers />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/speaker-agent"
+          element={
+            <ProtectedRoute>
+              <SpeakerAgent />
+            </ProtectedRoute>
+          }
+        />
 <Route
   path="/scheduling"
   element={

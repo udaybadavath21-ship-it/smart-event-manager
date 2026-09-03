@@ -127,13 +127,24 @@ function Sidebar() {
 
       <Link
         className={
+          location.pathname === "/speakers"
+            ? "active-link"
+            : ""
+        }
+        to="/speakers"
+      >
+        🎤 Speakers
+      </Link>
+
+      <Link
+        className={
           location.pathname === "/speaker-agent"
             ? "active-link"
             : ""
         }
         to="/speaker-agent"
       >
-        🎤 Speakers
+        🤖 Speaker Agent
       </Link>
 
       <Link

@@ -6,7 +6,7 @@ from email.mime.text import MIMEText
 from dotenv import load_dotenv
 
 load_dotenv("../.env")
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from email_service import send_registration_email
@@ -1190,162 +1190,178 @@ def calculate_venue_match_score(session, venue):
         score += 25
 
     return score
+_schedule_request_counter = 0
+
 @app.post("/schedule")
 def create_schedule(
     schedule_data: ScheduleCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     user: str = Depends(verify_token),
 ):
+    global _schedule_request_counter
+    _schedule_request_counter += 1
+    req_id = _schedule_request_counter
 
-    # -----------------------------------------------------
-    # 1. Check session
-    # -----------------------------------------------------
-
-    session = db.query(Session).filter(
-        Session.session_id == schedule_data.session_id
-    ).first()
-
-    if not session:
-        raise HTTPException(
-            status_code=404,
-            detail="Session not found."
-        )
-    # -----------------------------------------------------
-# Check if session is already scheduled
-# -----------------------------------------------------
-
-    existing_schedule = db.query(SessionSchedule).filter(
-    SessionSchedule.session_id == schedule_data.session_id
-).first()
-
-    if existing_schedule:
-     raise HTTPException(
-        status_code=409,
-        detail="This session is already scheduled."
+    print(
+        f"[SCHEDULE REQ #{req_id}] START: session_id={schedule_data.session_id}, "
+        f"speaker_id={schedule_data.speaker_id}, venue_id={schedule_data.venue_id}, "
+        f"time={schedule_data.start_time} - {schedule_data.end_time}",
+        flush=True
     )
 
-    # -----------------------------------------------------
-    # 2. Validate time
-    # -----------------------------------------------------
+    try:
+        # -----------------------------------------------------
+        # 1. Check session
+        # -----------------------------------------------------
+        session = db.query(Session).filter(
+            Session.session_id == schedule_data.session_id
+        ).first()
 
-    if schedule_data.end_time <= schedule_data.start_time:
-        raise HTTPException(
-            status_code=400,
-            detail="End time must be after start time."
-        )
-
-    # -----------------------------------------------------
-    # 3. Check speaker
-    # -----------------------------------------------------
-
-    speaker = db.query(Speaker).filter(
-        Speaker.speaker_id == schedule_data.speaker_id
-    ).first()
-
-    if not speaker:
-        raise HTTPException(
-            status_code=404,
-            detail="Speaker not found."
-        )
-
-    if not speaker.available:
-        raise HTTPException(
-            status_code=400,
-            detail="Speaker is currently unavailable."
-        )
-
-    # -----------------------------------------------------
-    # 4. Check venue
-    # -----------------------------------------------------
-
-    venue = db.query(Venue).filter(
-        Venue.venue_id == schedule_data.venue_id
-    ).first()
-
-    if not venue:
-        raise HTTPException(
-            status_code=404,
-            detail="Venue not found."
-        )
-
-    if not venue.available:
-        raise HTTPException(
-            status_code=400,
-            detail="Venue is currently unavailable."
-        )
-
-    # -----------------------------------------------------
-    # 5. Check speaker scheduling conflict
-    # -----------------------------------------------------
-
-    speaker_conflict = db.query(SessionSchedule).filter(
-        SessionSchedule.speaker_id ==
-        schedule_data.speaker_id,
-
-        SessionSchedule.start_time <
-        schedule_data.end_time,
-
-        SessionSchedule.end_time >
-        schedule_data.start_time
-    ).first()
-
-    if speaker_conflict:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Speaker scheduling conflict. "
-                "This speaker already has another "
-                "session during this time."
+        if not session:
+            print(f"[SCHEDULE REQ #{req_id}] REJECTED: session_id {schedule_data.session_id} not found", flush=True)
+            raise HTTPException(
+                status_code=404,
+                detail="Session not found."
             )
-        )
 
-    # -----------------------------------------------------
-    # 6. Check venue scheduling conflict
-    # -----------------------------------------------------
+        # -----------------------------------------------------
+        # Check if session is already scheduled
+        # -----------------------------------------------------
+        existing_schedule = db.query(SessionSchedule).filter(
+            SessionSchedule.session_id == schedule_data.session_id
+        ).first()
 
-    venue_conflict = db.query(SessionSchedule).filter(
-        SessionSchedule.venue_id ==
-        schedule_data.venue_id,
-
-        SessionSchedule.start_time <
-        schedule_data.end_time,
-
-        SessionSchedule.end_time >
-        schedule_data.start_time
-    ).first()
-
-    if venue_conflict:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Venue scheduling conflict. "
-                "This venue is already booked during "
-                "this time."
+        if existing_schedule:
+            print(
+                f"[SCHEDULE REQ #{req_id}] REJECTED: session_id {schedule_data.session_id} "
+                f"already scheduled in schedule_id {existing_schedule.schedule_id}",
+                flush=True
             )
+            raise HTTPException(
+                status_code=409,
+                detail="This session is already scheduled."
+            )
+
+        # -----------------------------------------------------
+        # 2. Validate time
+        # -----------------------------------------------------
+        if schedule_data.end_time <= schedule_data.start_time:
+            raise HTTPException(
+                status_code=400,
+                detail="End time must be after start time."
+            )
+
+        # -----------------------------------------------------
+        # 3. Check speaker
+        # -----------------------------------------------------
+        speaker = db.query(Speaker).filter(
+            Speaker.speaker_id == schedule_data.speaker_id
+        ).first()
+
+        if not speaker:
+            raise HTTPException(
+                status_code=404,
+                detail="Speaker not found."
+            )
+
+        if not speaker.available:
+            raise HTTPException(
+                status_code=400,
+                detail="Speaker is currently unavailable."
+            )
+
+        # -----------------------------------------------------
+        # 4. Check venue
+        # -----------------------------------------------------
+        venue = db.query(Venue).filter(
+            Venue.venue_id == schedule_data.venue_id
+        ).first()
+
+        if not venue:
+            raise HTTPException(
+                status_code=404,
+                detail="Venue not found."
+            )
+
+        if not venue.available:
+            raise HTTPException(
+                status_code=400,
+                detail="Venue is currently unavailable."
+            )
+
+        # -----------------------------------------------------
+        # 5. Check speaker scheduling conflict
+        # -----------------------------------------------------
+        speaker_conflict = db.query(SessionSchedule).filter(
+            SessionSchedule.speaker_id == schedule_data.speaker_id,
+            SessionSchedule.start_time < schedule_data.end_time,
+            SessionSchedule.end_time > schedule_data.start_time
+        ).first()
+
+        if speaker_conflict:
+            print(
+                f"[SCHEDULE REQ #{req_id}] REJECTED: speaker conflict on speaker_id {schedule_data.speaker_id}",
+                flush=True
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Speaker scheduling conflict. "
+                    "This speaker already has another "
+                    "session during this time."
+                )
+            )
+
+        # -----------------------------------------------------
+        # 6. Check venue scheduling conflict
+        # -----------------------------------------------------
+        venue_conflict = db.query(SessionSchedule).filter(
+            SessionSchedule.venue_id == schedule_data.venue_id,
+            SessionSchedule.start_time < schedule_data.end_time,
+            SessionSchedule.end_time > schedule_data.start_time
+        ).first()
+
+        if venue_conflict:
+            print(
+                f"[SCHEDULE REQ #{req_id}] REJECTED: venue conflict on venue_id {schedule_data.venue_id}",
+                flush=True
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Venue scheduling conflict. "
+                    "This venue is already booked during "
+                    "this time."
+                )
+            )
+
+        # -----------------------------------------------------
+        # 7. Create schedule
+        # -----------------------------------------------------
+        venue_match_score = calculate_venue_match_score(
+            session,
+            venue
         )
 
-    # -----------------------------------------------------
-    # 7. Create schedule
-    # -----------------------------------------------------
-
-    venue_match_score = calculate_venue_match_score(
-    session,
-    venue
- )
-
-    new_schedule = SessionSchedule(
-         session_id=schedule_data.session_id,
+        new_schedule = SessionSchedule(
+            session_id=schedule_data.session_id,
             venue_id=schedule_data.venue_id,
             speaker_id=schedule_data.speaker_id,
-             start_time=schedule_data.start_time,
+            start_time=schedule_data.start_time,
             end_time=schedule_data.end_time,
-             venue_match_score=venue_match_score,
- )
+            venue_match_score=venue_match_score,
+        )
 
-    db.add(new_schedule)
-    db.commit()
-    try:
-        send_schedule_email(
+        db.add(new_schedule)
+        db.commit()
+        db.refresh(new_schedule)
+        print(f"[SCHEDULE REQ #{req_id}] COMMITTED: schedule_id={new_schedule.schedule_id} session_id={new_schedule.session_id}", flush=True)
+
+        # 8. Queue email notification asynchronously in BackgroundTasks
+        # This guarantees HTTP response is never blocked or failed by email network issues
+        background_tasks.add_task(
+            send_schedule_email,
             speaker.email,
             speaker.name,
             session.session_title,
@@ -1353,25 +1369,47 @@ def create_schedule(
             new_schedule.start_time,
             new_schedule.end_time
         )
-    except Exception as email_err:
-        print(f"[Schedule] Notification email skipped or failed: {email_err}", flush=True)
 
-    return {
-        "message": "Session scheduled successfully!",
-        "schedule": new_schedule,
-        "speaker": {
-            "speaker_id": speaker.speaker_id,
-            "name": speaker.name,
-        },
-        "venue": {
-            "venue_id": venue.venue_id,
-            "venue_name": venue.venue_name,
-        },
-        "session": {
-            "session_id": session.session_id,
-            "session_title": session.session_title,
+        # 9. Return clean, fully serialized response dictionary
+        schedule_dict = {
+            "schedule_id": new_schedule.schedule_id,
+            "session_id": new_schedule.session_id,
+            "venue_id": new_schedule.venue_id,
+            "speaker_id": new_schedule.speaker_id,
+            "start_time": new_schedule.start_time.isoformat() if hasattr(new_schedule.start_time, "isoformat") else str(new_schedule.start_time),
+            "end_time": new_schedule.end_time.isoformat() if hasattr(new_schedule.end_time, "isoformat") else str(new_schedule.end_time),
+            "venue_match_score": new_schedule.venue_match_score,
         }
-    }
+
+        resp_payload = {
+            "message": "Session scheduled successfully!",
+            "schedule": schedule_dict,
+            "speaker": {
+                "speaker_id": speaker.speaker_id,
+                "name": speaker.name,
+            },
+            "venue": {
+                "venue_id": venue.venue_id,
+                "venue_name": venue.venue_name,
+            },
+            "session": {
+                "session_id": session.session_id,
+                "session_title": session.session_title,
+            }
+        }
+        print(f"[SCHEDULE REQ #{req_id}] SUCCESS: returning HTTP 200 for schedule_id {new_schedule.schedule_id}", flush=True)
+        return resp_payload
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        import traceback
+        tb = traceback.format_exc()
+        print(f"[SCHEDULE REQ #{req_id}] CRITICAL UNHANDLED ERROR:\n{tb}", flush=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Scheduling failed: {type(exc).__name__}: {str(exc)}"
+        )
 @app.post("/schedule/{schedule_id}/reminder")
 def send_schedule_reminder(
     schedule_id: int,
@@ -2216,3 +2254,16 @@ accessibility_type=(
             status_code=500,
             detail=str(e),
         )
+
+@app.get("/version")
+def get_version():
+    return {
+        "app": "smart-event-manager",
+        "version": "1.0.1",
+        "commit": "fix-scheduling-background-tasks",
+        "features": [
+            "background_tasks_email",
+            "safe_scheduling_dict",
+            "diagnostic_logging"
+        ]
+    }

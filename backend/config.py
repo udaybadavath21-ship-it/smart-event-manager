@@ -61,24 +61,20 @@ if _cors_raw:
             _origins.add(origin.strip())
 CORS_ORIGINS = sorted(list(_origins))
 
-# ── Email Service (Resend HTTPS API + Legacy SMTP) ──────────
-RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+# ── Gmail API (OAuth2 HTTPS Service) ────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
+GOOGLE_REDIRECT_URI = os.getenv(
+    "GOOGLE_REDIRECT_URI",
+    "https://smart-event-manager-o8m9.onrender.com/gmail/callback",
+).strip()
+GMAIL_SENDER_EMAIL = os.getenv("GMAIL_SENDER_EMAIL", os.getenv("EMAIL_USER", "")).strip()
+GMAIL_REFRESH_TOKEN = os.getenv("GMAIL_REFRESH_TOKEN", "").strip()
 
-
-def _sanitize_email_from(val: str) -> str:
-    raw = (val or "").strip()
-    if not raw:
-        return "Smart Event Manager <onboarding@resend.dev>"
-    raw_lower = raw.lower()
-    if any(dom in raw_lower for dom in ["@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com"]):
-        return "Smart Event Manager <onboarding@resend.dev>"
-    return raw
-
-
-EMAIL_FROM = _sanitize_email_from(os.getenv("EMAIL_FROM", ""))
-
-EMAIL_USER = os.getenv("EMAIL_USER", "")
+# Backward-compatibility aliases
+EMAIL_USER = os.getenv("EMAIL_USER", GMAIL_SENDER_EMAIL)
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
+EMAIL_FROM = GMAIL_SENDER_EMAIL or "Smart Event Manager"
 
 # ── Admin Credentials ───────────────────────────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")

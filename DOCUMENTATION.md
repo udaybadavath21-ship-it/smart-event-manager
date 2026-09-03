@@ -296,13 +296,12 @@ ADMIN_PASSWORD=<ADMIN_PASSWORD>
 # Cross-Origin Resource Sharing (Allowed Frontend Domains)
 CORS_ORIGINS=https://event.yourdomain.com,https://admin.yourdomain.com
 
-# Email Notifications (Resend HTTPS API — Render Free Compatible)
-RESEND_API_KEY=<RESEND_API_KEY>
-EMAIL_FROM=Smart Event Manager <onboarding@resend.dev>
-
-# Legacy SMTP (Optional fallback)
-EMAIL_USER=notifications@yourdomain.com
-EMAIL_PASSWORD=<SMTP_PASSWORD>
+# Email Notifications (Gmail API over HTTPS — Render Free Compatible)
+GOOGLE_CLIENT_ID=<GOOGLE_CLIENT_ID>
+GOOGLE_CLIENT_SECRET=<GOOGLE_CLIENT_SECRET>
+GOOGLE_REDIRECT_URI=https://smart-event-manager-o8m9.onrender.com/gmail/callback
+GMAIL_SENDER_EMAIL=<GMAIL_SENDER_EMAIL>
+GMAIL_REFRESH_TOKEN=<GMAIL_REFRESH_TOKEN>
 
 # Server Settings
 APP_VERSION=1.0.0
@@ -316,6 +315,45 @@ Create `frontend/.env.production` before executing `npm run build`:
 ```env
 VITE_API_URL=https://api.yourdomain.com
 ```
+
+---
+
+### Gmail API Email Service Setup (OAuth2 over HTTPS)
+
+Render Free blocks outbound SMTP ports 465 and 587. The platform utilizes the official **Gmail API over HTTPS** (`POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send`) on port 443 with OAuth2 authentication.
+
+#### 1. Google Cloud Console Configuration
+1. In Google Cloud Console:
+   - OAuth Client Type: **Web application**
+   - Authorized redirect URI (exact):
+     `https://smart-event-manager-o8m9.onrender.com/gmail/callback`
+   - Scope enabled: `https://www.googleapis.com/auth/gmail.send`
+
+#### 2. Render Environment Variables
+In your **Render Dashboard**, set the following environment variables:
+- `GOOGLE_CLIENT_ID`: Your Google OAuth client ID.
+- `GOOGLE_CLIENT_SECRET`: Your Google OAuth client secret.
+- `GOOGLE_REDIRECT_URI`: `https://smart-event-manager-o8m9.onrender.com/gmail/callback`
+- `GMAIL_SENDER_EMAIL`: Your authorized sending Gmail address.
+- `GMAIL_REFRESH_TOKEN`: (Optional if authorizing via OAuth flow, or set directly).
+
+#### 3. Authorizing via OAuth Flow
+1. Run the local setup utility or visit the authorization endpoint:
+   ```bash
+   python backend/setup_gmail_oauth.py
+   ```
+   *Alternatively*, navigate directly to:
+   `https://smart-event-manager-o8m9.onrender.com/gmail/auth`
+2. Google prompts for consent to send emails on behalf of your Gmail account.
+3. Upon approval, Google redirects directly to your production Render backend:
+   `https://smart-event-manager-o8m9.onrender.com/gmail/callback`
+4. The Render backend automatically:
+   - Captures the authorization code.
+   - Exchanges it with Google for OAuth tokens.
+   - Stores the session in memory and writes it to `gmail_token.json`.
+   - Never exposes refresh tokens, access tokens, or secrets in API responses, browser HTML, or logs.
+5. Verify live status anytime at:
+   `https://smart-event-manager-o8m9.onrender.com/gmail/status`
 
 ---
 

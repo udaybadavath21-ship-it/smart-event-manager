@@ -1,9 +1,6 @@
 import os
-import smtplib
 
 from dotenv import load_dotenv
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 
 load_dotenv("../.env")
 from fastapi import FastAPI, Depends, HTTPException
@@ -43,12 +40,13 @@ from datetime import datetime
 app = FastAPI()
 app.include_router(auth_router)
 
-# New feature routers
+# Feature routers
 from sponsor_routes import router as sponsor_router
 from incident_routes import router as incident_router
 from alert_routes import router as alert_router
 from operations_routes import router as operations_router
 from m4_routes import router as m4_router
+from gmail_routes import router as gmail_router
 from config import CORS_ORIGINS
 
 app.include_router(sponsor_router)
@@ -56,6 +54,7 @@ app.include_router(incident_router)
 app.include_router(alert_router)
 app.include_router(operations_router)
 app.include_router(m4_router)
+app.include_router(gmail_router)
 
 app.add_middleware(
     CORSMiddleware,

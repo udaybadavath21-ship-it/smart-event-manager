@@ -2,6 +2,10 @@
 .env
 *.env
 !.env.example
+*gmail_token*.json
+gmail_token.json
+token.json
+backend/gmail_token.json
 
 # Python
 __pycache__/

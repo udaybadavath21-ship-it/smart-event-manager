@@ -1,28 +1,227 @@
 """
-Email Delivery Service for Smart Event Manager.
+Email Delivery Service for Smart Event Manager via Gmail API over HTTPS.
 
-Uses the Resend HTTPS API (compatible with Render Free and cloud environments
-where outbound SMTP ports 465/587 are blocked).
+Replaces SMTP and third-party email providers with Google's Gmail API REST endpoint:
+POST https://gmail.googleapis.com/gmail/v1/users/me/messages/send
+
+Uses OAuth2 refresh token exchange to maintain valid access tokens automatically.
+Eliminates outbound SMTP port blocks on cloud hosts like Render Free.
 """
 
+import base64
+import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
-import resend
-from config import EMAIL_FROM, EMAIL_PASSWORD, EMAIL_USER, RESEND_API_KEY
+import time
+from email.mime.image import MIMEImage
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from typing import Any, Dict, Optional
+
+import requests
+
+from config import (
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI,
+    GMAIL_SENDER_EMAIL,
+    GMAIL_REFRESH_TOKEN,
+    EMAIL_USER,
+    EMAIL_PASSWORD,
+)
 
 logger = logging.getLogger("email_service")
 
+# In-memory token cache for active process
+_runtime_cache: Dict[str, Any] = {
+    "refresh_token": None,
+    "access_token": None,
+    "expires_at": 0.0,
+}
 
-def _sanitize_email_from(sender: str) -> str:
-    """Ensure sender address is safe for Resend testing/domain policy."""
-    raw = (sender or "").strip()
-    if not raw:
-        return "Smart Event Manager <onboarding@resend.dev>"
-    lower = raw.lower()
-    if any(dom in lower for dom in ["@gmail.com", "@yahoo.com", "@hotmail.com", "@outlook.com"]):
-        return "Smart Event Manager <onboarding@resend.dev>"
-    return raw
+
+def set_runtime_tokens(
+    refresh_token: Optional[str] = None,
+    access_token: Optional[str] = None,
+    expires_in: int = 3600,
+) -> None:
+    """Store runtime tokens obtained from OAuth callback in memory."""
+    if refresh_token:
+        _runtime_cache["refresh_token"] = refresh_token
+    if access_token:
+        _runtime_cache["access_token"] = access_token
+        _runtime_cache["expires_at"] = time.time() + max(60, expires_in - 120)
+
+
+def save_refresh_token_locally(token: str) -> None:
+    """
+    Persist refresh token to local git-ignored storage for local development.
+    NEVER logs or exposes the token value.
+    """
+    if not token or len(token.strip()) < 5:
+        return
+
+    clean_token = token.strip()
+
+    # 1. Save to backend/gmail_token.json (strictly git-ignored)
+    token_file = os.path.join(os.path.dirname(__file__), "gmail_token.json")
+    try:
+        with open(token_file, "w", encoding="utf-8") as f:
+            json.dump({"refresh_token": clean_token, "saved_at": time.time()}, f, indent=2)
+    except Exception as exc:
+        logger.debug("Could not write gmail_token.json: %s", exc)
+
+    # 2. Update or append in local .env if it exists (strictly git-ignored)
+    for env_path in [
+        os.path.join(os.path.dirname(__file__), "..", ".env"),
+        os.path.join(os.path.dirname(__file__), ".env"),
+    ]:
+        resolved = os.path.abspath(env_path)
+        if os.path.exists(resolved):
+            try:
+                with open(resolved, "r", encoding="utf-8") as ef:
+                    lines = ef.readlines()
+
+                updated = False
+                new_lines = []
+                for line in lines:
+                    if line.strip().startswith("GMAIL_REFRESH_TOKEN="):
+                        new_lines.append(f"GMAIL_REFRESH_TOKEN={clean_token}\n")
+                        updated = True
+                    else:
+                        new_lines.append(line)
+
+                if not updated:
+                    new_lines.append(f"\nGMAIL_REFRESH_TOKEN={clean_token}\n")
+
+                with open(resolved, "w", encoding="utf-8") as ef:
+                    ef.writelines(new_lines)
+                break
+            except Exception as env_exc:
+                logger.debug("Could not update local .env with refresh token: %s", env_exc)
+
+
+def _get_active_refresh_token() -> str:
+    """
+    Retrieve refresh token with fallback priority:
+    1. Environment variable GMAIL_REFRESH_TOKEN
+    2. In-memory runtime cache
+    3. config.py GMAIL_REFRESH_TOKEN
+    4. Local git-ignored gmail_token.json
+    """
+    # 1. Environment variable
+    env_token = os.environ.get("GMAIL_REFRESH_TOKEN", "").strip()
+    if env_token:
+        return env_token
+
+    # 2. Runtime cache
+    cached = (_runtime_cache.get("refresh_token") or "").strip()
+    if cached:
+        return cached
+
+    # 3. Config module
+    if GMAIL_REFRESH_TOKEN and GMAIL_REFRESH_TOKEN.strip():
+        return GMAIL_REFRESH_TOKEN.strip()
+
+    # 4. Local git-ignored token file
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "gmail_token.json"),
+        os.path.join(os.path.dirname(__file__), "..", "gmail_token.json"),
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    tok = data.get("refresh_token", "").strip()
+                    if tok:
+                        return tok
+            except Exception:
+                pass
+
+    return ""
+
+
+def _get_valid_access_token() -> Optional[str]:
+    """
+    Obtain a valid OAuth2 access token for the Gmail API.
+    Reuses cached token if valid; otherwise exchanges the refresh token.
+    """
+    # 1. Check in-memory cached access token
+    cached_token = _runtime_cache.get("access_token")
+    expires_at = _runtime_cache.get("expires_at", 0.0)
+    if cached_token and time.time() < expires_at:
+        return cached_token
+
+    # 2. Retrieve refresh token and client credentials
+    refresh_token = _get_active_refresh_token()
+    if not refresh_token:
+        return None
+
+    client_id = (os.environ.get("GOOGLE_CLIENT_ID", "").strip() or GOOGLE_CLIENT_ID).strip()
+    client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET", "").strip() or GOOGLE_CLIENT_SECRET).strip()
+
+    if not client_id or not client_secret:
+        print("[Gmail Service] ERROR: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing.", flush=True)
+        return None
+
+    # 3. Request fresh access token from Google
+    token_url = "https://oauth2.googleapis.com/token"
+    payload = {
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }
+
+    try:
+        resp = requests.post(token_url, data=payload, timeout=12)
+        data = resp.json()
+    except Exception as err:
+        print(f"[Gmail Service] ERROR: Failed network call refreshing token: {err}", flush=True)
+        return None
+
+    if resp.status_code != 200:
+        err_msg = data.get("error_description", data.get("error", "Unknown token refresh error"))
+        print(f"[Gmail Service] ERROR: Google token refresh failed (HTTP {resp.status_code}): {err_msg}", flush=True)
+        return None
+
+    access_token = data.get("access_token")
+    expires_in = int(data.get("expires_in", 3600))
+    if access_token:
+        _runtime_cache["access_token"] = access_token
+        _runtime_cache["expires_at"] = time.time() + max(60, expires_in - 120)
+        return access_token
+
+    return None
+
+
+def get_gmail_status() -> Dict[str, Any]:
+    """
+    Diagnostic status report for the Gmail integration.
+    Guarantees no secret keys, access tokens, or refresh tokens are exposed.
+    """
+    client_id = (os.environ.get("GOOGLE_CLIENT_ID", "").strip() or GOOGLE_CLIENT_ID).strip()
+    client_secret = (os.environ.get("GOOGLE_CLIENT_SECRET", "").strip() or GOOGLE_CLIENT_SECRET).strip()
+    refresh_token = _get_active_refresh_token()
+    sender_email = (
+        os.environ.get("GMAIL_SENDER_EMAIL", "").strip()
+        or GMAIL_SENDER_EMAIL
+        or "me"
+    ).strip()
+
+    is_configured = bool(client_id and client_secret and refresh_token)
+
+    return {
+        "provider": "gmail_api_https",
+        "configured": is_configured,
+        "has_client_id": bool(client_id),
+        "has_client_secret": bool(client_secret),
+        "has_refresh_token": bool(refresh_token),
+        "sender_email": sender_email,
+        "redirect_uri": GOOGLE_REDIRECT_URI,
+        "note": "Authorized via Google OAuth2; sends over HTTPS via users.messages.send.",
+    }
 
 
 def send_registration_email(
@@ -33,52 +232,55 @@ def send_registration_email(
     qr_path: str,
 ) -> Optional[Dict[str, Any]]:
     """
-    Send registration confirmation email with QR code pass attached via Resend HTTPS API.
+    Send registration confirmation email with QR code pass attached via Gmail API over HTTPS.
 
-    Maintains identical signature and behavior to legacy SMTP implementation
+    Maintains identical signature and behavior to legacy implementation
     while eliminating outbound SMTP network blocks on cloud hosts like Render Free.
     Provides clear, safe diagnostic logging for container environments.
     """
-    # 1. Log that send_registration_email() was called
+    # 1. Log function invocation
     print(
-        f"[Email Service] send_registration_email() called for attendee: '{name}' (Event ID: {event_id})",
+        f"[Gmail Service] send_registration_email() called for attendee: '{name}' (Event ID: {event_id})",
         flush=True,
     )
     logger.info("send_registration_email() called for attendee: '%s' (Event ID: %s)", name, event_id)
 
-    # 2. Check and log whether RESEND_API_KEY is configured (ONLY as True/False, NEVER log the key)
-    api_key = (
-        os.environ.get("RESEND_API_KEY", "").strip()
-        or os.getenv("RESEND_API_KEY", "").strip()
-        or (RESEND_API_KEY or "").strip()
-    )
-    has_api_key = bool(api_key and len(api_key) > 5)
-    print(f"[Email Service] RESEND_API_KEY configured: {has_api_key}", flush=True)
-    logger.info("RESEND_API_KEY configured: %s", has_api_key)
+    # 2. Check and log whether refresh token is configured (ONLY as True/False, NEVER log the token)
+    refresh_token = _get_active_refresh_token()
+    has_refresh_token = bool(refresh_token and len(refresh_token) > 5)
+    print(f"[Gmail Service] GMAIL_REFRESH_TOKEN configured: {has_refresh_token}", flush=True)
+    logger.info("GMAIL_REFRESH_TOKEN configured: %s", has_refresh_token)
 
-    if not has_api_key:
+    if not has_refresh_token:
         print(
-            f"[Email Service] WARNING: RESEND_API_KEY is not configured in environment. Skipping email delivery for recipient: '{email}' (Event ID: {event_id}).",
+            f"[Gmail Service] WARNING: GMAIL_REFRESH_TOKEN is not configured. Skipping email delivery for recipient: '{email}' (Event ID: {event_id}). Visit /gmail/auth to authorize.",
             flush=True,
         )
         logger.warning(
-            "RESEND_API_KEY is not configured in environment. Skipping email delivery for recipient: '%s' (Event ID: %s).",
+            "GMAIL_REFRESH_TOKEN is not configured. Skipping email delivery for recipient: '%s' (Event ID: %s).",
             email,
             event_id,
         )
         return None
 
-    # 3. Determine and log sender and recipient addresses
-    sender_raw = (
-        os.environ.get("EMAIL_FROM", "").strip()
-        or os.getenv("EMAIL_FROM", "").strip()
-        or (EMAIL_FROM or "").strip()
-    )
-    sender = _sanitize_email_from(sender_raw)
-    print(f"[Email Service] Sender address: '{sender}' | Recipient email: '{email}'", flush=True)
-    logger.info("Sender address: '%s' | Recipient email: '%s'", sender, email)
+    # 3. Obtain active access token
+    access_token = _get_valid_access_token()
+    if not access_token:
+        print(
+            f"[Gmail Service] ERROR: Unable to obtain valid Gmail API access token. Skipping delivery for '{email}'.",
+            flush=True,
+        )
+        logger.error("Unable to obtain valid Gmail API access token for recipient: %s", email)
+        return None
 
-    # Plain text email content (matches Milestone 1 specification)
+    # 4. Determine sender email
+    sender_email = (
+        os.environ.get("GMAIL_SENDER_EMAIL", "").strip()
+        or GMAIL_SENDER_EMAIL
+        or "me"
+    ).strip()
+
+    # 5. Build plain text and HTML message bodies
     body = f"""Hello {name},
 
 Your registration has been successfully completed.
@@ -110,91 +312,103 @@ Event Registration Team
     <p style="font-size: 13px; color: #64748b; margin-bottom: 0;">Regards,<br><strong>Event Registration Team</strong></p>
 </div>"""
 
-    # 4. Resolve QR attachment path and log status
+    # 6. Resolve QR attachment path and log status
     resolved_qr = qr_path
     if resolved_qr and not os.path.exists(resolved_qr):
         alt_qr = os.path.join(os.path.dirname(__file__), qr_path)
         if os.path.exists(alt_qr):
             resolved_qr = alt_qr
 
-    file_exists = bool(resolved_qr and os.path.exists(resolved_qr))
-    file_size = os.path.getsize(resolved_qr) if file_exists else 0
+    qr_exists = bool(resolved_qr and os.path.exists(resolved_qr))
+    qr_size = os.path.getsize(resolved_qr) if qr_exists else 0
     print(
-        f"[Email Service] QR Attachment: path='{qr_path}', resolved='{resolved_qr}', exists={file_exists}, size={file_size} bytes",
+        f"[Gmail Service] QR Attachment: path='{qr_path}', resolved='{resolved_qr}', exists={qr_exists}, size={qr_size} bytes",
         flush=True,
     )
-    logger.info(
-        "QR Attachment: path='%s', resolved='%s', exists=%s, size=%d bytes",
-        qr_path,
-        resolved_qr,
-        file_exists,
-        file_size,
-    )
+    logger.info("QR Attachment: path='%s', resolved='%s', exists=%s, size=%d bytes", qr_path, resolved_qr, qr_exists, qr_size)
 
-    attachments: List[Dict[str, Any]] = []
-    if file_exists:
-        try:
-            with open(resolved_qr, "rb") as f:
-                attachments.append({
-                    "filename": os.path.basename(resolved_qr),
-                    "content": list(f.read()),
-                })
-        except Exception as read_err:
-            print(f"[Email Service] WARNING: Failed to read QR attachment from '{resolved_qr}': {read_err}", flush=True)
-            logger.warning("Failed to read QR attachment from '%s': %s", resolved_qr, read_err)
-    else:
-        print(
-            f"[Email Service] WARNING: QR attachment file does not exist at '{resolved_qr}'. Proceeding without attachment.",
-            flush=True,
-        )
-        logger.warning("QR attachment file does not exist at '%s'. Proceeding without attachment.", resolved_qr)
-
-    # 5. Dispatch email via Resend HTTPS API
+    # 7. Construct MIME multipart email message
     try:
-        print(f"[Email Service] Submitting email to Resend HTTPS API for '{email}' via '{sender}'...", flush=True)
-        logger.info("Submitting email to Resend HTTPS API for '%s' via '%s'...", email, sender)
+        message = MIMEMultipart("mixed")
+        message["To"] = email
+        message["From"] = sender_email
+        message["Subject"] = "Event Registration Confirmed"
 
-        resend.api_key = api_key
-        params: resend.Emails.SendParams = {
-            "from": sender,
-            "to": [email],
-            "subject": "Event Registration Confirmed",
-            "text": body,
-            "html": html_body,
-        }
-        if attachments:
-            params["attachments"] = attachments
+        # Alternative part for plain text and HTML
+        alt_part = MIMEMultipart("alternative")
+        alt_part.attach(MIMEText(body, "plain", "utf-8"))
+        alt_part.attach(MIMEText(html_body, "html", "utf-8"))
+        message.attach(alt_part)
 
-        response = resend.Emails.send(params)
-
-        email_id = None
-        if isinstance(response, dict):
-            email_id = response.get("id")
+        # Attach QR PNG image
+        if qr_exists:
+            try:
+                with open(resolved_qr, "rb") as img_file:
+                    img_part = MIMEImage(img_file.read())
+                    img_part.add_header(
+                        "Content-Disposition",
+                        "attachment",
+                        filename=os.path.basename(resolved_qr),
+                    )
+                    message.attach(img_part)
+            except Exception as read_err:
+                print(f"[Gmail Service] WARNING: Failed to read QR attachment from '{resolved_qr}': {read_err}", flush=True)
         else:
-            email_id = getattr(response, "id", str(response))
+            print(
+                f"[Gmail Service] WARNING: QR attachment file not found at '{resolved_qr}'. Proceeding without attachment.",
+                flush=True,
+            )
 
-        print(
-            f"[Email Service] SUCCESS: Email submitted to Resend for '{email}'. Message ID: {email_id}",
-            flush=True,
-        )
-        logger.info("SUCCESS: Email submitted to Resend for '%s'. Message ID: %s", email, email_id)
-        return response
+        # Base64url encode the entire MIME message
+        raw_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+
+    except Exception as mime_err:
+        print(f"[Gmail Service] ERROR: Failed constructing MIME message: {mime_err}", flush=True)
+        logger.error("Failed constructing MIME message: %s", mime_err)
+        return None
+
+    # 8. Submit via Gmail API over HTTPS
+    try:
+        print(f"[Gmail Service] Submitting email to Gmail API HTTPS for recipient: '{email}'...", flush=True)
+        logger.info("Submitting email to Gmail API HTTPS for recipient: '%s'...", email)
+
+        send_url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+        }
+        send_resp = requests.post(send_url, json={"raw": raw_message}, headers=headers, timeout=15)
+
+        if send_resp.status_code == 200:
+            msg_data = send_resp.json()
+            message_id = msg_data.get("id", "unknown")
+            print(
+                f"[Gmail Service] SUCCESS: Email submitted via Gmail API for '{email}'. Gmail Message ID: {message_id}",
+                flush=True,
+            )
+            logger.info("SUCCESS: Email submitted via Gmail API for '%s'. Gmail Message ID: %s", email, message_id)
+            return msg_data
+        else:
+            try:
+                err_json = send_resp.json()
+                safe_reason = err_json.get("error", {}).get("message", send_resp.text[:200])
+            except Exception:
+                safe_reason = send_resp.text[:200]
+
+            print(
+                f"[Gmail Service] FAILURE: Gmail API delivery error for '{email}' (Event ID: {event_id}) -> Status: {send_resp.status_code} | Reason: {safe_reason}",
+                flush=True,
+            )
+            logger.error(
+                "FAILURE: Gmail API delivery error for '%s' (Event ID: %s) -> Status: %s | Reason: %s",
+                email,
+                event_id,
+                send_resp.status_code,
+                safe_reason,
+            )
+            return None
 
     except Exception as exc:
-        error_code = getattr(exc, "code", None) or getattr(exc, "status_code", "N/A")
-        error_type = getattr(exc, "error_type", type(exc).__name__)
-        error_message = getattr(exc, "message", str(exc))
-
-        print(
-            f"[Email Service] FAILURE: Resend delivery error for '{email}' (Event ID: {event_id}) -> HTTP/API Status: {error_code} | Error Type: {error_type} | Message: {error_message}",
-            flush=True,
-        )
-        logger.error(
-            "FAILURE: Resend delivery error for '%s' (Event ID: %s) -> HTTP/API Status: %s | Error Type: %s | Message: %s",
-            email,
-            event_id,
-            error_code,
-            error_type,
-            error_message,
-        )
+        print(f"[Gmail Service] FAILURE: Unexpected error calling Gmail API for '{email}': {exc}", flush=True)
+        logger.error("FAILURE: Unexpected error calling Gmail API for '%s': %s", email, exc)
         return None

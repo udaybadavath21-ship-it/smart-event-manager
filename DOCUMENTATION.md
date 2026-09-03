@@ -296,7 +296,11 @@ ADMIN_PASSWORD=<ADMIN_PASSWORD>
 # Cross-Origin Resource Sharing (Allowed Frontend Domains)
 CORS_ORIGINS=https://event.yourdomain.com,https://admin.yourdomain.com
 
-# Email Notifications (SMTP)
+# Email Notifications (Resend HTTPS API — Render Free Compatible)
+RESEND_API_KEY=<RESEND_API_KEY>
+EMAIL_FROM=Smart Event Manager <onboarding@resend.dev>
+
+# Legacy SMTP (Optional fallback)
 EMAIL_USER=notifications@yourdomain.com
 EMAIL_PASSWORD=<SMTP_PASSWORD>
 

@@ -61,7 +61,14 @@ if _cors_raw:
             _origins.add(origin.strip())
 CORS_ORIGINS = sorted(list(_origins))
 
-# ── Email (existing) ───────────────────────────────────────
+# ── Email Service (Resend HTTPS API + Legacy SMTP) ──────────
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+_email_from_env = os.getenv("EMAIL_FROM", "").strip()
+if not _email_from_env or _email_from_env.endswith("@gmail.com") or _email_from_env.endswith("@yahoo.com"):
+    EMAIL_FROM = "Smart Event Manager <onboarding@resend.dev>"
+else:
+    EMAIL_FROM = _email_from_env
+
 EMAIL_USER = os.getenv("EMAIL_USER", "")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 

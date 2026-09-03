@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import api from "../api";
 import Swal from "sweetalert2";
 import Sidebar from "../components/Sidebar";
@@ -17,6 +17,7 @@ function Scheduling() {
   const [endTime, setEndTime] = useState("");
 
   const [loading, setLoading] = useState(false);
+  const isSubmittingRef = useRef(false);
   const [editingScheduleId, setEditingScheduleId] = useState(null);
   const [roomSuggestion, setRoomSuggestion] = useState(null);
   const [roomSuggestionLoading, setRoomSuggestionLoading] = useState(false);
@@ -59,6 +60,10 @@ function Scheduling() {
 const handleSchedule = async (e) => {
   e.preventDefault();
 
+  if (isSubmittingRef.current || loading) {
+    return;
+  }
+
   if (!sessionId || !speakerId || !venueId) {
     Swal.fire({
       icon: "warning",
@@ -87,6 +92,7 @@ const handleSchedule = async (e) => {
   }
 
   try {
+    isSubmittingRef.current = true;
     setLoading(true);
 
     const selectedSession = sessions.find(
@@ -102,13 +108,21 @@ const handleSchedule = async (e) => {
       end_time: endTime,
       venue_match_score: null,
     };
-    let response;
 
     if (editingScheduleId) {
-      response = await api.put(
+      await api.put(
         `/schedule/${editingScheduleId}`,
         requestData
       );
+
+      // Reset form and reload scheduled sessions immediately
+      setSessionId("");
+      setSpeakerId("");
+      setVenueId("");
+      setStartTime("");
+      setEndTime("");
+      setEditingScheduleId(null);
+      await loadData();
 
       await Swal.fire({
         icon: "success",
@@ -119,10 +133,19 @@ const handleSchedule = async (e) => {
         confirmButtonText: "OK",
       });
     } else {
-      response = await api.post(
+      await api.post(
         "/schedule",
         requestData
       );
+
+      // Reset form and reload scheduled sessions immediately
+      setSessionId("");
+      setSpeakerId("");
+      setVenueId("");
+      setStartTime("");
+      setEndTime("");
+      setEditingScheduleId(null);
+      await loadData();
 
       await Swal.fire({
         icon: "success",
@@ -133,16 +156,6 @@ const handleSchedule = async (e) => {
         confirmButtonText: "OK",
       });
     }
-
-    // Reset form
-    setSessionId("");
-    setSpeakerId("");
-    setVenueId("");
-    setStartTime("");
-    setEndTime("");
-    setEditingScheduleId(null);
-
-    await loadData();
 
   } catch (error) {
     console.error(error);
@@ -158,6 +171,7 @@ const handleSchedule = async (e) => {
     });
   } finally {
     setLoading(false);
+    isSubmittingRef.current = false;
   }
 };
 const handleEdit = (schedule) => {
@@ -329,14 +343,20 @@ const handleRoomSuggestion = async () => {
                       Select Session
                     </option>
 
-                    {sessions.map((session) => (
-                      <option
-                        key={session.session_id}
-                        value={session.session_id}
-                      >
-                        {session.session_title}
-                      </option>
-                    ))}
+                    {sessions.map((session) => {
+                      const isAlreadyScheduled = schedules.some(
+                        (s) => s.session_id === session.session_id && s.schedule_id !== editingScheduleId
+                      );
+                      return (
+                        <option
+                          key={session.session_id}
+                          value={session.session_id}
+                          disabled={isAlreadyScheduled}
+                        >
+                          {session.session_title}{isAlreadyScheduled ? " (Already Scheduled)" : ""}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
 

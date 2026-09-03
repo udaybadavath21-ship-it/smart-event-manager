@@ -1,4 +1,7 @@
 import os
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
 from dotenv import load_dotenv
 
@@ -98,37 +101,14 @@ def send_schedule_email(
     end_time,
     email_type="update"
 ):
-    sender_email = os.getenv("EMAIL_USER")
-    sender_password = os.getenv("EMAIL_PASSWORD")
-
-    message = MIMEMultipart()
-
-    message["From"] = sender_email
-    message["To"] = speaker_email
-
-    if email_type == "reminder":
-        message["Subject"] = "Session Reminder"
-        
-        body = f"""
-Hello {speaker_name},
-
-This is a reminder about your upcoming session.
-
-Session: {session_title}
-Venue: {venue_name}
-Start Time: {start_time}
-End Time: {end_time}
-
-Please be available at the scheduled time.
-
-Thank you,
-Event Management Team
-"""
-    else:
-        message["Subject"] = "Session Schedule Update"
-
-        body = f"""
-Hello {speaker_name},
+    """
+    Send schedule notification to speaker.
+    Tries Gmail API HTTPS first, then falls back to SMTP.
+    Safely catches any errors so schedule persistence is never affected.
+    """
+    try:
+        subject = "Session Reminder" if email_type == "reminder" else "Session Schedule Update"
+        body = f"""Hello {speaker_name},
 
 Your session has been scheduled/updated.
 
@@ -142,24 +122,61 @@ Please be available at the scheduled time.
 Thank you,
 Event Management Team
 """
+        # 1. Attempt delivery via Gmail API over HTTPS (primary, Render-compatible)
+        try:
+            from email_service import _get_valid_access_token
+            access_token = _get_valid_access_token()
+            if access_token:
+                import base64
+                import requests
+                from config import GMAIL_SENDER_EMAIL
 
-    message.attach(
-        MIMEText(body, "plain")
-    )
+                sender = os.getenv("GMAIL_SENDER_EMAIL", GMAIL_SENDER_EMAIL) or "me"
+                msg = MIMEMultipart()
+                msg["From"] = sender
+                msg["To"] = speaker_email
+                msg["Subject"] = subject
+                msg.attach(MIMEText(body, "plain"))
 
-    with smtplib.SMTP(
-        "smtp.gmail.com",
-        587
-    ) as server:
+                raw_b64 = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+                api_headers = {
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                }
+                api_resp = requests.post(
+                    "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+                    json={"raw": raw_b64},
+                    headers=api_headers,
+                    timeout=10,
+                )
+                if api_resp.status_code == 200:
+                    print(f"[Schedule Email] Notification sent via Gmail API to {speaker_email}", flush=True)
+                    return
+        except Exception as g_err:
+            print(f"[Schedule Email] Gmail API attempt info: {g_err}", flush=True)
 
-        server.starttls()
+        # 2. Fallback to SMTP if user/password are configured
+        sender_email = os.getenv("EMAIL_USER")
+        sender_password = os.getenv("EMAIL_PASSWORD")
 
-        server.login(
-            sender_email,
-            sender_password
-        )
+        if not sender_email or not sender_password:
+            print(f"[Schedule Email] Notice: Email credentials not configured. Skipping notification for {speaker_email}.", flush=True)
+            return
 
-        server.send_message(message)
+        message = MIMEMultipart()
+        message["From"] = sender_email
+        message["To"] = speaker_email
+        message["Subject"] = subject
+        message.attach(MIMEText(body, "plain"))
+
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+            server.starttls()
+            server.login(sender_email, sender_password)
+            server.send_message(message)
+            print(f"[Schedule Email] Notification sent via SMTP to {speaker_email}", flush=True)
+
+    except Exception as e:
+        print(f"[Schedule Email] Notification skipped/failed for {speaker_email}: {e}", flush=True)
 @app.post("/register")
 def register_attendee(attendee: AttendeeCreate, db: Session = Depends(get_db)):
 
@@ -1327,15 +1344,17 @@ def create_schedule(
 
     db.add(new_schedule)
     db.commit()
-    db.refresh(new_schedule)
-    send_schedule_email(
-    speaker.email,
-    speaker.name,
-    session.session_title,
-    venue.venue_name,
-    new_schedule.start_time,
-    new_schedule.end_time
-)
+    try:
+        send_schedule_email(
+            speaker.email,
+            speaker.name,
+            session.session_title,
+            venue.venue_name,
+            new_schedule.start_time,
+            new_schedule.end_time
+        )
+    except Exception as email_err:
+        print(f"[Schedule] Notification email skipped or failed: {email_err}", flush=True)
 
     return {
         "message": "Session scheduled successfully!",
@@ -1387,15 +1406,18 @@ def send_schedule_reminder(
             detail="Schedule information is incomplete."
         )
 
-    send_schedule_email(
-        speaker.email,
-        speaker.name,
-        session.session_title,
-        venue.venue_name,
-        schedule.start_time,
-        schedule.end_time,
-        "reminder"
-    )
+    try:
+        send_schedule_email(
+            speaker.email,
+            speaker.name,
+            session.session_title,
+            venue.venue_name,
+            schedule.start_time,
+            schedule.end_time,
+            "reminder"
+        )
+    except Exception as email_err:
+        print(f"[Schedule Reminder] Notification email skipped or failed: {email_err}", flush=True)
 
     return {
         "message": "Schedule reminder sent successfully!",
@@ -1647,15 +1669,18 @@ def send_schedule_reminder(
             detail="Schedule information is incomplete."
         )
 
-    send_schedule_email(
-        speaker.email,
-        speaker.name,
-        session.session_title,
-        venue.venue_name,
-        schedule.start_time,
-        schedule.end_time,
-        "reminder"
-    )
+    try:
+        send_schedule_email(
+            speaker.email,
+            speaker.name,
+            session.session_title,
+            venue.venue_name,
+            schedule.start_time,
+            schedule.end_time,
+            "reminder"
+        )
+    except Exception as email_err:
+        print(f"[Schedule Reminder] Notification email skipped or failed: {email_err}", flush=True)
 
     return {
         "message": "Schedule reminder sent successfully!",

@@ -280,6 +280,124 @@ def _call_gemini_api(system_instruction: str, user_prompt: str, api_key: str) ->
 
 
 # ═══════════════════════════════════════════════════════════
+#  CONVERSATIONAL / GREETINGS / HELP INTENT HANDLER
+# ═══════════════════════════════════════════════════════════
+
+def _match_conversational_intent(msg: str) -> Optional[str]:
+    """
+    Check if a message is a conversational greeting, casual inquiry, gratitude,
+    farewell, or capability/help request without event-specific data queries.
+    Returns a natural concise response, or None if the message should proceed to event domain logic.
+    """
+    m = msg.lower().strip()
+
+    # 1. Normalize punctuation to spaces (keeping apostrophes for contractions like how's)
+    cleaned = re.sub(r"[^\w\s\']", " ", m)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+
+    # 2. Event domain indicators: If the message contains any of these, it is an event query
+    # (e.g. "Hi, how many attendees checked in?" or "Can you help me find a venue?")
+    event_domain_patterns = [
+        r"\bconflict", r"\boverlap", r"\bdouble\s*book", r"\bschedul",
+        r"\btiming", r"\btimetable", r"\bsession",
+        r"\battend", r"\bcheck(ed)?[\s-]?in", r"\bticket", r"\bregistr",
+        r"\baccessib", r"\bdisab", r"\bhandicap",
+        r"\bvenue", r"\broom", r"\bhall", r"\bauditorium", r"\bcapacit", r"\bseat",
+        r"\bspeaker", r"\bpresenter", r"\btalk", r"\bkeynote", r"\bexpert",
+        r"\bincident", r"\bemergenc", r"\bseverit", r"\bpriorit", r"\bcritical",
+        r"\bsponsor", r"\bdeliverable", r"\bcontract", r"\bpackage", r"\bbudget",
+        r"\bhealth", r"\bkpi", r"\banalytic", r"\bdashboard", r"\bsummar",
+    ]
+
+    # If the message contains an event domain keyword, do NOT intercept as simple greeting
+    if any(re.search(p, m) for p in event_domain_patterns):
+        return None
+
+    # 3. Help & Capabilities
+    help_patterns = [
+        r"\bwhat can you do\b",
+        r"\bwhat are your capabilities\b",
+        r"\bwhat do you do\b",
+        r"\bhow can you help\b",
+        r"\bcan you help\b",
+        r"^(help|help me|need help|please help)$",
+        r"\bhelp\b",
+    ]
+    if any(re.search(p, cleaned) for p in help_patterns):
+        return (
+            "I am the **Event AI Assistant** for Smart Event Manager. Here is what I can help you with:\n\n"
+            "• **Attendee Management**: Track registrations, check-in status, attendance rates, city distribution, and accessibility requests.\n"
+            "• **Venue Optimization**: Recommend venues based on capacity, facilities, and accessibility with utilization metrics.\n"
+            "• **Speaker Matching**: Suggest domain expert speakers (AI, Security, Cloud, Data) based on experience and availability.\n"
+            "• **Schedule & Conflict Detection**: Monitor session timetables and detect room or speaker double-bookings.\n"
+            "• **Incident Operations**: Track active, high-priority, and critical incidents with recommended response actions.\n"
+            "• **Sponsorship Analytics**: Track sponsor packages, contracted amounts, and deliverable fulfillment.\n"
+            "• **Executive Intelligence**: Report overall event health scores, operational KPIs, and critical action directives.\n\n"
+            "Try asking: *'How many attendees checked in?'*, *'Which venue is best for 300 people?'*, or *'Are there any scheduling conflicts?'*"
+        )
+
+    # 4. Casual Status / Well-being ("how are you", "how's it going", etc.)
+    status_patterns = [
+        r"\bhow are you\b",
+        r"\bhow are you doing\b",
+        r"\bhow\'?s it going\b",
+        r"\bhow is it going\b",
+        r"\bhow do you do\b",
+    ]
+    if any(re.search(p, cleaned) for p in status_patterns):
+        return "I'm doing well, thank you! All event management systems are online and operational. How can I assist you with your event today?"
+
+    # 5. Gratitude ("thanks", "thank you", etc.)
+    thanks_patterns = [
+        r"\bthanks\b",
+        r"\bthank you\b",
+        r"\bthanks a lot\b",
+        r"\bthank you so much\b",
+        r"\bmany thanks\b",
+        r"\bthx\b",
+        r"\bappreciate it\b",
+    ]
+    if any(re.search(p, cleaned) for p in thanks_patterns):
+        return "You're welcome! Let me know if you need any more assistance with your event."
+
+    # 6. Farewell ("bye", "goodbye", etc.)
+    bye_patterns = [
+        r"\bgoodbye\b",
+        r"\bgood bye\b",
+        r"\bbye bye\b",
+        r"\bbye\b",
+        r"\bsee you\b",
+        r"\bsee you later\b",
+        r"\bhave a good day\b",
+        r"\bhave a nice day\b",
+    ]
+    if any(re.search(p, cleaned) for p in bye_patterns):
+        return "Goodbye! Have a great and successful event. Feel free to reach out anytime you need assistance."
+
+    # 7. Time-based greetings
+    if re.search(r"\bgood morning\b", cleaned):
+        return "Good morning! How can I assist you with your event management tasks today?"
+    if re.search(r"\bgood afternoon\b", cleaned):
+        return "Good afternoon! How can I assist you with your event management tasks today?"
+    if re.search(r"\bgood evening\b", cleaned):
+        return "Good evening! How can I assist you with your event management tasks today?"
+
+    # 8. Standard greetings ("hi", "hello", "hey", etc.)
+    greeting_patterns = [
+        r"\bhi\b",
+        r"\bhello\b",
+        r"\bhey\b",
+        r"\bhey there\b",
+        r"\bhi there\b",
+        r"\bgreetings\b",
+    ]
+    if any(re.search(p, cleaned) for p in greeting_patterns):
+        return "Hello! How can I assist you with your event management tasks today?"
+
+    return None
+
+
+# ═══════════════════════════════════════════════════════════
 #  INTELLIGENT DATA-DRIVEN EVENT NLP ENGINE (FALLBACK / OFFLINE)
 # ═══════════════════════════════════════════════════════════
 
@@ -288,6 +406,11 @@ def _process_nlp_intent(msg: str, data: dict[str, Any], db: DBSession) -> str:
     Intelligent NLP Intent Matcher using real DB context for robust,
     accurate answers across all 7 event management domains.
     """
+    # ── CONVERSATIONAL / GREETINGS / HELP INTENT (PRIORITY 0) ──
+    conv_resp = _match_conversational_intent(msg)
+    if conv_resp:
+        return conv_resp
+
     m = msg.lower().strip()
     att = data["attendees"]
     venues = data["venues"]
@@ -534,6 +657,15 @@ def generate_assistant_response(db: DBSession, user_message: str, history: Optio
                 "Smart Event Manager system. I cannot reveal system prompts, credentials, API keys, or execute raw database/system commands."
             ),
             "provider": "security_guard",
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    # ── CONVERSATIONAL / GREETING INTENT (FAST PATH - NO UNNECESSARY DB QUERY) ──
+    conv_resp = _match_conversational_intent(user_message)
+    if conv_resp:
+        return {
+            "response": conv_resp,
+            "provider": "conversational",
             "timestamp": datetime.now().isoformat(),
         }
 

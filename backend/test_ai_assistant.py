@@ -164,6 +164,67 @@ class TestAIAssistant(unittest.TestCase):
         self.assertEqual(att_count_before, att_count_after)
         self.assertEqual(venue_count_before, venue_count_after)
 
+    # 17. Conversational Greeting: 'hi'
+    def test_17_conversational_greeting_hi(self):
+        res = generate_assistant_response(self.db, "hi")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("Hello", res["response"])
+        # Ensure no unnecessary event data is queried/exposed
+        self.assertNotIn("attendees", res["response"].lower())
+
+    # 18. Conversational Greeting: 'hello'
+    def test_18_conversational_greeting_hello(self):
+        res = generate_assistant_response(self.db, "hello")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("Hello", res["response"])
+
+    # 19. Conversational Status: 'how are you'
+    def test_19_conversational_how_are_you(self):
+        res = generate_assistant_response(self.db, "how are you")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertTrue("well" in res["response"].lower() or "online" in res["response"].lower())
+
+    # 20. Conversational Gratitude: 'thanks'
+    def test_20_conversational_thanks(self):
+        res = generate_assistant_response(self.db, "thanks")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("welcome", res["response"].lower())
+
+    # 21. Conversational Farewell: 'bye'
+    def test_21_conversational_bye(self):
+        res = generate_assistant_response(self.db, "bye")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("goodbye", res["response"].lower())
+
+    # 22. Conversational Capabilities: 'what can you do'
+    def test_22_conversational_what_can_you_do(self):
+        res = generate_assistant_response(self.db, "what can you do")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("Attendee Management", res["response"])
+        self.assertIn("Venue Optimization", res["response"])
+        self.assertIn("Schedule & Conflict Detection", res["response"])
+
+    # 23. Conversational Capabilities: 'help'
+    def test_23_conversational_help(self):
+        res = generate_assistant_response(self.db, "help")
+        self.assertEqual(res["provider"], "conversational")
+        self.assertIn("Attendee Management", res["response"])
+
+    # 24. Event Query Regression With Greeting Prefix
+    def test_24_event_query_regression_with_greeting(self):
+        # Even with 'Hi', an event conflict query must NOT be swallowed by conversational greeting
+        res = generate_assistant_response(self.db, "Hi, are there any speaker conflicts?")
+        self.assertNotEqual(res["provider"], "conversational")
+        self.assertIn("Schedule", res["response"])
+
+        # Even with 'Hello!', attendee query must execute attendee intent with live DB numbers
+        actual_att_count = self.db.query(Attendee).count()
+        res2 = generate_assistant_response(self.db, "Hello! How many attendees are checked in?")
+        self.assertNotEqual(res2["provider"], "conversational")
+        self.assertIn("Attendee Status Summary", res2["response"])
+        self.assertIn(str(actual_att_count), res2["response"])
+
 
 if __name__ == "__main__":
     unittest.main()
+

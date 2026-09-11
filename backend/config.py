@@ -76,6 +76,10 @@ EMAIL_USER = os.getenv("EMAIL_USER", GMAIL_SENDER_EMAIL)
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD", "")
 EMAIL_FROM = GMAIL_SENDER_EMAIL or "Smart Event Manager"
 
+# ── AI Assistant Provider Config ──────────────────────────────
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "").strip()
+
 # ── Admin Credentials ───────────────────────────────────────
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD")
@@ -86,3 +90,4 @@ if not ADMIN_USERNAME or not ADMIN_PASSWORD:
         "environment variables must be defined in .env. Do not run without "
         "setting administrator credentials."
     )
+

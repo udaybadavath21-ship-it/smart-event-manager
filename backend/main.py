@@ -50,6 +50,7 @@ from alert_routes import router as alert_router
 from operations_routes import router as operations_router
 from m4_routes import router as m4_router
 from gmail_routes import router as gmail_router
+from assistant_routes import router as assistant_router
 from config import CORS_ORIGINS
 
 app.include_router(sponsor_router)
@@ -58,6 +59,8 @@ app.include_router(alert_router)
 app.include_router(operations_router)
 app.include_router(m4_router)
 app.include_router(gmail_router)
+app.include_router(assistant_router)
+
 
 app.add_middleware(
     CORSMiddleware,

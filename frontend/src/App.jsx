@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import UserPage from "./pages/UserPage";
 import AdminPage from "./pages/AdminPage";
 import QRScanner from "./pages/QRScanner";
@@ -20,10 +20,15 @@ import OperationsCenter from "./pages/OperationsCenter";
 import Reports from "./pages/Reports";
 import ExecutiveCenter from "./pages/ExecutiveCenter";
 import AIOperationsCenter from "./pages/AIOperationsCenter";
+import EventAIAssistant from "./components/EventAIAssistant";
 
-function App() {
+function AppContent() {
+  const location = useLocation();
+  const token = localStorage.getItem("token");
+  const isAuthAdminPage = Boolean(token && location.pathname !== "/" && location.pathname !== "/login");
+
   return (
-    <BrowserRouter>
+    <>
       <Routes>
 
         {/* Registration */}
@@ -240,6 +245,15 @@ function App() {
         />
 
       </Routes>
+      {isAuthAdminPage && <EventAIAssistant />}
+    </>
+  );
+}
+
+function App() {
+  return (
+    <BrowserRouter>
+      <AppContent />
     </BrowserRouter>
   );
 }

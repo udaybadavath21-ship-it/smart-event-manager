@@ -2,7 +2,6 @@ import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import api from "../api";
-import EventAIAssistant from "./EventAIAssistant";
 
 function Sidebar() {
 
@@ -302,8 +301,6 @@ function Sidebar() {
       >
         🚪 Logout
       </button>
-
-      <EventAIAssistant />
 
     </div>
   );

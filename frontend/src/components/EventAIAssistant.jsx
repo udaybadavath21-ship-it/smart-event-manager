@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import api from "../api";
 import "./EventAIAssistant.css";
 
@@ -117,7 +118,7 @@ export default function EventAIAssistant() {
     });
   };
 
-  return (
+  const chatUI = (
     <>
       {/* Floating Action Button */}
       {!isOpen && (
@@ -254,4 +255,8 @@ export default function EventAIAssistant() {
       )}
     </>
   );
+
+  return typeof document !== "undefined" && document.body
+    ? createPortal(chatUI, document.body)
+    : chatUI;
 }
